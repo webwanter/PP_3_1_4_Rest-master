@@ -45,9 +45,13 @@ public class UserService implements UserDetailsService {
 
     public boolean saveUser(User user) {
         if (userRepository.findByEmail(user.getEmail()).isPresent()) {
-            throw new RuntimeException("User with this email already exists");
+            return false;
         }
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
+
+        if (!user.getPassword().startsWith("$2a$")) {
+            user.setPassword(passwordEncoder.encode(user.getPassword()));
+        }
+
         userRepository.save(user);
         return true;
     }
