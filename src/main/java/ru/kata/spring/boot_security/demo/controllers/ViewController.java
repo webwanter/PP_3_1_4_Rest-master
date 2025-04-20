@@ -41,10 +41,6 @@ public class ViewController {
 
     @GetMapping()
     public String redirectToIndexOrLogin(Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated() ||
-                authentication instanceof AnonymousAuthenticationToken) {
-            return "redirect:/login";
-        }
         return "index";
     }
 
@@ -68,8 +64,7 @@ public class ViewController {
     @GetMapping("/user")
     @PreAuthorize("hasAnyRole('USER','ADMIN')")
     public String getUserView(Model model, Authentication authentication) {
-        String email = authentication.getName();
-        User currentUser = (User) userService.loadUserByUsername(email);
+        User currentUser = (User) authentication.getPrincipal();
         model.addAttribute("currentUser", currentUser);
         return "user :: content";
     }

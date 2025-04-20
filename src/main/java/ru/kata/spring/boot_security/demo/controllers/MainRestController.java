@@ -18,7 +18,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/admin")
+@RequestMapping("/api")
 public class MainRestController {
 
     private final UserService userService;
@@ -32,7 +32,7 @@ public class MainRestController {
     }
 
     // GET /admin — возвращаем список пользователей и текущего пользователя в JSON
-    @GetMapping
+    @GetMapping("/admin")
     public ResponseEntity<Map<String, Object>> userList() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || authentication.getPrincipal().equals("anonymousUser")) {
@@ -58,8 +58,20 @@ public class MainRestController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/user")
+    public ResponseEntity<UserDTO> getUserView(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        User currentUser = (User) auth.getPrincipal();
+        UserDTO userDto = convertToDto(currentUser);
+
+        return ResponseEntity.ok(userDto);
+    }
+
     // GET /admin/new_user — возвращаем роли и пустой UserDTO для формы создания
-    @GetMapping("/new_user")
+    @GetMapping("/admin/new_user")
     public ResponseEntity<Map<String, Object>> addUserForm() {
         Map<String, Object> response = new HashMap<>();
         response.put("userForm", new UserDTO());
@@ -69,34 +81,33 @@ public class MainRestController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/new_user")
+    @PostMapping("/admin/new_user")
     public ResponseEntity<?> addUser(@RequestBody @Valid UserDTO userDTO, BindingResult bindingResult) {
-        if (bindingResult.hasErrors()) {
-            Map<String, String> errors = new HashMap<>();
-            bindingResult.getFieldErrors().forEach(error ->
-                    errors.put(error.getField(), error.getDefaultMessage()));
-            return ResponseEntity.badRequest().body(errors);
-        }
 
         try {
+            // Правильная проверка существования пользователя
+            if (userService.existsByEmail(userDTO.getEmail())) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(Collections.singletonMap("error", "Email уже существует"));
+            }
+
             User user = convertToEntity(userDTO);
             user.setPassword(passwordEncoder.encode(userDTO.getPassword()));
+            userService.saveUser(user);
 
-            boolean saved = userService.saveUser(user);
-            if (!saved) {
-                Map<String, String> error = new HashMap<>();
-                error.put("message", "Пользователь с таким email уже существует");
-                return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
-            }
-            return ResponseEntity.status(HttpStatus.CREATED).body(convertToDto(user));
+            // Возвращаем полные данные созданного пользователя
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Пользователь успешно создан");
+            response.put("user", convertToDto(user));
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("message", "Ошибка при создании пользователя: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "Ошибка при создании пользователя"));
         }
     }
 
-    @PostMapping("/edit")
+    @PostMapping("/admin/edit")
     public ResponseEntity<?> updateUser(@RequestBody @Valid UserDTO userDTO) {
         System.out.println("Полученные данные: " + userDTO);
 
@@ -146,7 +157,7 @@ public class MainRestController {
     }
 
 
-    @DeleteMapping("/delete/{id}")
+    @DeleteMapping("/admin/delete/{id}")
     public ResponseEntity<?> deleteUser(@PathVariable Long id) {
         User user = userService.findUserById(id);
         if (user == null) {
@@ -155,22 +166,6 @@ public class MainRestController {
         userService.deleteUser(id);
         return ResponseEntity.ok().build();
     }
-
-    // для влкладки user
-    @GetMapping("/user")
-    public ResponseEntity<User> getCurrentUser(Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        String email = authentication.getName(); // или другой уникальный идентификатор
-        User currentUser = (User) userService.loadUserByUsername(email);
-        if (currentUser == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(currentUser);
-    }
-
 
     // Вспомогательные методы для конвертации
 

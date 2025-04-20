@@ -1,83 +1,9 @@
 $(document).ready(function () {
-
-    // Проверяем, есть ли сохранённая вкладка (по умолчанию — "Admin")
-    const activeTab = localStorage.getItem('activeTab') || '#admin';
-
-    // Если URL содержит /admin или активна вкладка Admin — загружаем данные
-    if (window.location.pathname === '/admin' || activeTab === '#admin') {
-        loadTab('/admin');
-        loadUsers();
-    } else if (activeTab === '#user') {
-        loadTab('/user');
-    }
-
-    // Обработчик кликов по вкладкам
-    $('.nav-link').on('click', function (e) {
-        e.preventDefault();
-        const target = $(this).data('target');
-        localStorage.setItem('activeTab', target); // Сохраняем активную вкладку
-
-        if (target === '#admin-page') {
-            loadTab('/admin');
-            loadUsers();
-        } else if (target === '#user-page') {
-            loadTab('/user');
-        }
-    });
-
-    function loadTab(url) {
-        $('#tabContent').html('Загрузка...');
-        $.ajax({
-            url: url,
-            method: 'GET',
-            success: function (data) {
-                $('#tabContent').html(data);
-                if (url === '/admin') {
-                    loadUsers();
-                    // Убедимся, что роли загружены
-                    if (!rolesLoaded) loadRoles();
-                }
-            },
-            error: function () {
-                $('#tabContent').html('Ошибка загрузки содержимого');
-            }
-        });
-    }
-
-    loadTab('/admin');
-
-    $('#adminTab').click(function (e) {
-        e.preventDefault();
-        if (!$(this).hasClass('active')) {
-            $('.nav-link').removeClass('active');
-            $(this).addClass('active');
-            loadTab('/admin');
-            loadUsers();
-        }
-    });
-
-    $('#userTab').click(function (e) {
-        e.preventDefault();
-        if (!$(this).hasClass('active')) {
-            $('.nav-link').removeClass('active');
-            $(this).addClass('active');
-            loadTab('/user');
-        }
-    });
-
-    // Валидация формы редактирования
-    $(document).on('submit', '#editForm', function (e) {
-        e.preventDefault(); // Prevent the default form submission
-    });
-
-    // Обработчик переключения вкладок
-    $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-        var target = $(e.target).attr('href'); // Получаем ID целевой вкладки
-    });
-    loadRoles();
-
-    // Функция для загрузки ролей (добавляем кэширование)
+// Функция для загрузки ролей (добавляем кэширование)
     let rolesLoaded = false;
+    let csrfToken = $('meta[name="csrf-token"]').attr('content');
+
+
     function loadRoles() {
         if (rolesLoaded) return; // Не загружаем повторно
 
@@ -122,6 +48,87 @@ $(document).ready(function () {
             }
         });
     }
+
+    loadRoles();
+
+    // Проверяем, есть ли сохранённая вкладка (по умолчанию — "Admin")
+    const activeTab = localStorage.getItem('activeTab') || '#admin';
+
+    // Если URL содержит /admin или активна вкладка Admin — загружаем данные
+    if (window.location.pathname === '/admin' || activeTab === '#admin') {
+        loadTab('/admin');
+        loadUsers();
+    } else if (activeTab === '#user') {
+        loadTab('/user');
+    }
+
+    // Обработчик кликов по вкладкам
+    $('.nav-link').on('click', function (e) {
+        e.preventDefault();
+        const target = $(this).data('target');
+        localStorage.setItem('activeTab', target); // Сохраняем активную вкладку
+
+        if (target === '#admin-page') {
+            loadTab('/admin');
+            loadUsers();
+        } else if (target === '#user-page') {
+            loadTab('/user');
+        }
+    });
+
+    function loadTab(url) {
+        $('#tabContent').html('Загрузка...');
+        $.ajax({
+            url: url,
+            method: 'GET',
+            success: function (data) {
+                $('#tabContent').html(data);
+                if (url === '/admin') {
+                    loadUsers();
+                    // Убедимся, что роли загружены
+                    if (!rolesLoaded) loadRoles();
+                } else if (url === '/user') {
+                    loadUserPage();
+                }
+            },
+            error: function () {
+                $('#tabContent').html('Ошибка загрузки содержимого');
+            }
+        });
+    }
+
+    loadTab('/admin');
+
+    $('#adminTab').click(function (e) {
+        e.preventDefault();
+        if (!$(this).hasClass('active')) {
+            $('.nav-link').removeClass('active');
+            $(this).addClass('active');
+            loadTab('/admin');
+            loadUsers();
+        }
+    });
+
+    $('#userTab').click(function (e) {
+        e.preventDefault();
+        if (!$(this).hasClass('active')) {
+            $('.nav-link').removeClass('active');
+            $(this).addClass('active');
+            loadTab('/user');
+        }
+    });
+
+    // Валидация формы редактирования
+    $(document).on('submit', '#editForm', function (e) {
+        e.preventDefault(); // Prevent the default form submission
+    });
+
+    // Обработчик переключения вкладок
+    $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+        var target = $(e.target).attr('href'); // Получаем ID целевой вкладки
+    });
+
+
 
     $("#editForm").validate({
         errorClass: "error",
@@ -181,6 +188,9 @@ $(document).ready(function () {
             type: 'POST',
             contentType: 'application/json',
             data: JSON.stringify(updatedUser),
+            headers: {
+                'X-CSRF-TOKEN': csrfToken
+            },
             success: function (data) {
                 alert("User updated successfully");
                 $('#editModal').modal('hide');
@@ -290,6 +300,11 @@ $(document).ready(function () {
         deleteUser();
     });
 
+    //Обработчик события для кнопки редактирования
+    $(document).on('click', '#editButton', function () {
+        saveUserChanges();
+    });
+
 // Функция для загрузки пользователей
     function loadUsers() {
         $.ajax({
@@ -321,32 +336,26 @@ $(document).ready(function () {
         });
     }
 
-// Функция для загрузки ролей
-    function loadRoles() {
-        $.ajax({
-            url: '/api/admin/new_user',
-            type: 'GET',
-            dataType: 'json',
-            success: function (data) {
-                var roles = data.roles;
-                var selectNew = $('#roles');
-                var selectEdit = $('#rolesEdit');
-                var selectDelete = $('#rolesDelete');
-
-                selectNew.empty();
-                selectEdit.empty();
-                selectDelete.empty();
-
-                $.each(roles, function (i, role) {
-                    selectNew.append('<option value="' + role + '">' + role + '</option>');
-                    selectEdit.append('<option value="' + role + '">' + role + '</option>');
-                    selectDelete.append('<option value="' + role + '">' + role + '</option>');
-                });
-            },
-            error: function (xhr, status, error) {
-            }
-        });
+    // Загрузка страницы пользоветеля
+    function loadUserPage() {
+        fetch('/api/user')
+            .then(response => response.json())
+            .then(data => {
+                const users = Array.isArray(data) ? data : [data];
+                $('#userTable').html(users.map(user => `
+                  <tr>
+                      <th>${user.id}</th>
+                      <th>${user.firstName}</th>
+                      <th>${user.lastName}</th>
+                      <th>${user.age}</th>
+                      <th>${user.email}</th>
+                      <th>${user.roles.join(', ')}</th>
+                  </tr>
+              `).join(''));
+            })
+            .catch(console.error);
     }
+
 
 // Функция для загрузки текущего пользователя
     function loadCurrentUser() {
@@ -422,6 +431,7 @@ $(document).ready(function () {
         });
     }
 
+
 // Функция для загрузки данных пользователя в форму удаления
     function loadUserForDelete(userId) {
         $.ajax({
@@ -446,17 +456,24 @@ $(document).ready(function () {
     }
 
 // Функция для удаления пользователя
-    function deleteUser() {
-        var userId = $('#idDelete').val();
+    function deleteUser(userId) {
+        if (!confirm('Удалить пользователя?')) return;
+
+        console.log('Удаление пользователя:', userId); // Логируем ID
+
         $.ajax({
-            url: '/api/admin/delete/' + userId,
+            url: `/api/admin/delete/${userId}`,
             type: 'DELETE',
-            success: function () {
-                alert("Пользователь удалён");
-                $('#deleteModal').modal('hide');
-                loadUsers();
+            headers: {
+                'X-CSRF-TOKEN': csrfToken // Убедитесь, что csrfToken определён
             },
-            error: function (xhr, status, error) {
+            success: function() {
+                console.log('Успешно удалено');
+                loadUsers(); // Перезагружаем список
+            },
+            error: function(xhr) {
+                console.error('Ошибка удаления:', xhr.responseText);
+                alert('Не удалось удалить пользователя');
             }
         });
     }
