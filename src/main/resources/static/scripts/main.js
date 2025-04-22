@@ -1,480 +1,433 @@
 $(document).ready(function () {
-// Функция для загрузки ролей (добавляем кэширование)
-    let rolesLoaded = false;
-    let csrfToken = $('meta[name="csrf-token"]').attr('content');
+    // Получаем CSRF токен из meta тегов
+    const token = $("meta[name='_csrf']").attr("content");
+    const header = $("meta[name='_csrf_header']").attr("content");
 
-
-    function loadRoles() {
-        if (rolesLoaded) return; // Не загружаем повторно
-
-        $.ajax({
-            url: '/api/admin/new_user',
-            type: 'GET',
-            dataType: 'json',
-            success: function (data) {
-                var roles = data.roles;
-                var selectNew = $('#roles');
-                var selectEdit = $('#rolesEdit');
-                var selectDelete = $('#rolesDelete');
-
-                // Очищаем только если есть новые роли
-                if (roles && roles.length > 0) {
-                    selectNew.empty();
-                    selectEdit.empty();
-                    selectDelete.empty();
-
-                    $.each(roles, function (i, role) {
-                        selectNew.append($('<option>', {
-                            value: role,
-                            text: role
-                        }));
-                        selectEdit.append($('<option>', {
-                            value: role,
-                            text: role
-                        }));
-                        selectDelete.append($('<option>', {
-                            value: role,
-                            text: role
-                        }));
-                    });
-
-                    rolesLoaded = true; // Помечаем как загруженные
-                }
-            },
-            error: function (xhr, status, error) {
-                console.error('Ошибка загрузки ролей:', error);
-                // Можно добавить повторную попытку через 5 секунд
-                setTimeout(loadRoles, 5000);
+    // Настройка AJAX запросов с CSRF токеном
+    $.ajaxSetup({
+        beforeSend: function (xhr) {
+            if (header && token) {
+                xhr.setRequestHeader(header, token);
             }
+        }
+    });
+
+    // Загрузка данных текущего пользователя
+    loadCurrentUser();
+
+    // Обработчики вкладок
+    setupTabs();
+
+    // Инициализация таблицы пользователей и формы
+    if ($('#usersTable').length) {
+        loadUsersTable();
+        initNewUserForm();
+    }
+
+    // Загрузка данных пользователя для вкладки User
+    if ($('#userData').length) {
+        loadUserData();
+    }
+});
+
+function loadCurrentUser() {
+    $.get("/api", function (data) {
+        const user = data.currentUser;
+        $('#headerEmail').text(user.email);
+        $('#headerRoles').text(Array.from(user.roles).join(', '));
+
+        // Скрываем вкладку Admin если у пользователя нет роли ADMIN
+        if (!user.roles.includes('ADMIN')) {
+            $('#adminTab').parent().hide();
+            $('#userTab').tab('show');
+        }
+    }).fail(function () {
+        console.error("Ошибка загрузки данных пользователя");
+    });
+}
+
+function setupTabs() {
+    // Обработчик переключения основных вкладок (Admin/User)
+    $('#usersTabs a').on('click', function (e) {
+        e.preventDefault();
+        const tabId = $(this).attr('href');
+        $(this).tab('show');
+
+        // Загружаем контент при переключении вкладок
+        if (tabId === '#userSection') {
+            loadUserData();
+        } else if (tabId === '#adminSection') {
+            loadUsersTable();
+        }
+    });
+
+    // Обработчик внутренних вкладок Admin
+    $('#myTab a').on('click', function (e) {
+        e.preventDefault();
+        $(this).tab('show');
+    });
+}
+
+function loadUsersTable() {
+    $.get("/api/admin", function (data) {
+        const users = data.allUsers;
+        const roles = data.roles;
+
+        // Заполняем таблицу пользователей
+        const tbody = $('#usersTable tbody');
+        tbody.empty();
+
+        users.forEach(user => {
+            const rolesText = Array.from(user.roles).join(', ');
+            const row = `
+                <tr data-id="${user.id}">
+                    <td>${user.id}</td>
+                    <td>${user.firstName}</td>
+                    <td>${user.lastName}</td>
+                    <td>${user.age}</td>
+                    <td>${user.email}</td>
+                    <td>${rolesText}</td>
+                    <td>
+                        <button class="btn btn-primary edit-btn" data-id="${user.id}">Edit</button>
+                    </td>
+                    <td>
+                        <button class="btn btn-danger delete-btn" data-id="${user.id}">Delete</button>
+                    </td>
+                </tr>
+            `;
+            tbody.append(row);
         });
-    }
 
-    loadRoles();
-
-    // Проверяем, есть ли сохранённая вкладка (по умолчанию — "Admin")
-    const activeTab = localStorage.getItem('activeTab') || '#admin';
-
-    // Если URL содержит /admin или активна вкладка Admin — загружаем данные
-    if (window.location.pathname === '/admin' || activeTab === '#admin') {
-        loadTab('/admin');
-        loadUsers();
-    } else if (activeTab === '#user') {
-        loadTab('/user');
-    }
-
-    // Обработчик кликов по вкладкам
-    $('.nav-link').on('click', function (e) {
-        e.preventDefault();
-        const target = $(this).data('target');
-        localStorage.setItem('activeTab', target); // Сохраняем активную вкладку
-
-        if (target === '#admin-page') {
-            loadTab('/admin');
-            loadUsers();
-        } else if (target === '#user-page') {
-            loadTab('/user');
-        }
-    });
-
-    function loadTab(url) {
-        $('#tabContent').html('Загрузка...');
-        $.ajax({
-            url: url,
-            method: 'GET',
-            success: function (data) {
-                $('#tabContent').html(data);
-                if (url === '/admin') {
-                    loadUsers();
-                    // Убедимся, что роли загружены
-                    if (!rolesLoaded) loadRoles();
-                } else if (url === '/user') {
-                    loadUserPage();
-                }
-            },
-            error: function () {
-                $('#tabContent').html('Ошибка загрузки содержимого');
-            }
+        // Заполняем select с ролями в форме нового пользователя
+        const rolesSelect = $('#roles');
+        rolesSelect.empty();
+        roles.forEach(role => {
+            rolesSelect.append(`<option value="${role}">${role}</option>`);
         });
-    }
 
-    loadTab('/admin');
+        // Инициализация обработчиков кнопок
+        $('.edit-btn').on('click', function () {
+            const userId = $(this).data('id');
+            showEditModal(userId);
+        });
 
-    $('#adminTab').click(function (e) {
-        e.preventDefault();
-        if (!$(this).hasClass('active')) {
-            $('.nav-link').removeClass('active');
-            $(this).addClass('active');
-            loadTab('/admin');
-            loadUsers();
-        }
+        $('.delete-btn').on('click', function (e) {
+            e.preventDefault();
+            const userId = $(this).data('id');
+            showDeleteModal(userId);
+        });
+    }).fail(function () {
+        console.error("Ошибка загрузки списка пользователей");
     });
+}
 
-    $('#userTab').click(function (e) {
-        e.preventDefault();
-        if (!$(this).hasClass('active')) {
-            $('.nav-link').removeClass('active');
-            $(this).addClass('active');
-            loadTab('/user');
-        }
-    });
-
-    // Валидация формы редактирования
-    $(document).on('submit', '#editForm', function (e) {
-        e.preventDefault(); // Prevent the default form submission
-    });
-
-    // Обработчик переключения вкладок
-    $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-        var target = $(e.target).attr('href'); // Получаем ID целевой вкладки
-    });
-
-
-
-    $("#editForm").validate({
-        errorClass: "error",
-        errorElement: "label",
-        errorPlacement: function (error, element) {
-            error.insertAfter(element);
-        },
+function initNewUserForm() {
+    // Валидация формы
+    $("#newUserForm").validate({
         rules: {
-            firstNameEdit: "required", // firstNameEdit instead of firstName
-            lastNameEdit: "required", // lastNameEdit instead of lastName
-            ageEdit: { // ageEdit instead of age
+            firstName: "required",
+            lastName: "required",
+            age: {
                 required: true,
-                number: true,
                 min: 1
             },
-            emailEdit: { // emailEdit instead of email
+            email: {
                 required: true,
                 email: true
             },
-            passwordEdit: { // passwordEdit instead of password
+            password: {
+                required: true,
                 minlength: 3
+            },
+            roles: "required"
+        },
+        messages: {
+            firstName: "Please enter first name",
+            lastName: "Please enter last name",
+            age: {
+                required: "Please enter age",
+                min: "Age must be positive"
+            },
+            email: {
+                required: "Please enter email",
+                email: "Please enter a valid email address"
+            },
+            password: {
+                required: "Please provide a password",
+                minlength: "Your password must be at least 3 characters long"
+            },
+            roles: "Please select at least one role"
+        },
+        submitHandler: function (form) {
+            addNewUser();
+            return false;
+        }
+    });
+}
+
+function addNewUser() {
+    const formData = {
+        firstName: $('#firstName').val(),
+        lastName: $('#lastName').val(),
+        age: $('#age').val(),
+        email: $('#email').val(),
+        password: $('#password').val(),
+        roles: $('#roles').val()
+    };
+
+    $.ajax({
+        url: '/api/admin/new_user',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(formData),
+        success: function (response) {
+            $('#newUserForm')[0].reset();
+            loadUsersTable();
+            $('#new-user-tab').tab('show');
+            alert('User added successfully!');
+        },
+        error: function (xhr) {
+            if (xhr.status === 409) {
+                alert('Error: Email already exists');
+            } else {
+                alert('Error adding user');
+            }
+        }
+    });
+}
+
+function showEditModal(userId) {
+    $.get(`/api/admin/edit/${userId}`, function (user) {
+        // Заполняем форму данными пользователя
+        $('#editForm input[name="id"]').val(user.id);
+        $('#editForm input[name="firstName"]').val(user.firstName);
+        $('#editForm input[name="lastName"]').val(user.lastName);
+        $('#editForm input[name="age"]').val(user.age);
+        $('#editForm input[name="email"]').val(user.email);
+        $('#editForm input[name="password"]').val('');
+
+        // Заполняем роли
+        const rolesSelect = $('#editForm select[name="roles"]');
+        rolesSelect.empty();
+        rolesSelect.append('<option value="USER">USER</option>');
+        rolesSelect.append('<option value="ADMIN">ADMIN</option>');
+
+        // Выбираем текущие роли пользователя
+        if (user.roles) {
+            user.roles.forEach(role => {
+                rolesSelect.find(`option[value="${role}"]`).prop('selected', true);
+            });
+        }
+
+        // Инициализируем валидацию
+        initEditFormValidation();
+
+        // Показываем модальное окно
+        $('#editModal').modal('show');
+    }).fail(function () {
+        alert('Ошибка загрузки данных пользователя');
+    });
+}
+
+
+javascript
+
+function initEditFormValidation() {
+    // Удаляем предыдущие валидаторы, если они были
+    $("#editForm").validate().destroy();
+
+    $("#editForm").validate({
+        rules: {
+            firstName: {
+                required: true,
+                minlength: 2
+            },
+            lastName: {
+                required: true,
+                minlength: 2
+            },
+            age: {
+                required: true,
+                min: 1,
+                digits: true
+            },
+            email: {
+                required: true,
+                email: true
+            },
+            roles: {
+                required: true
             }
         },
         messages: {
-            firstNameEdit: "Please enter the first name", // firstNameEdit instead of firstName
-            lastNameEdit: "Please enter the last name", // lastNameEdit instead of lastName
-            ageEdit: { // ageEdit instead of age
-                required: "Please enter the age",
-                number: "Age must be a number",
-                min: "Age must be positive"
+            firstName: {
+                required: "Пожалуйста, введите имя",
+                minlength: "Имя должно содержать минимум 2 символа"
             },
-            emailEdit: { // emailEdit instead of email
-                required: "Please enter the email",
-                email: "Please enter a valid email"
+            lastName: {
+                required: "Пожалуйста, введите фамилию",
+                minlength: "Фамилия должна содержать минимум 2 символа"
             },
-            passwordEdit: { // passwordEdit instead of password
-                minlength: "Password must be at least 3 characters long"
+            age: {
+                required: "Пожалуйста, введите возраст",
+                min: "Возраст должен быть положительным числом",
+                digits: "Возраст должен быть целым числом"
+            },
+            email: {
+                required: "Пожалуйста, введите email",
+                email: "Пожалуйста, введите корректный email"
+            },
+            roles: {
+                required: "Пожалуйста, выберите хотя бы одну роль"
             }
         },
+        errorElement: "label",
+        errorClass: "error",
+        errorPlacement: function (error, element) {
+            error.insertAfter(element);
+        },
+        highlight: function (element) {
+            $(element).addClass("is-invalid");
+        },
+        unhighlight: function (element) {
+            $(element).removeClass("is-invalid");
+        },
         submitHandler: function (form) {
-            var updatedUser = {
-                id: $('#idEdit').val(),
-                firstName: $('#firstNameEdit').val(),
-                lastName: $('#lastNameEdit').val(),
-                age: $('#ageEdit').val(),
-                email: $('#emailEdit').val(),
-                password: $('#passwordEdit').val(),
-                roles: $('#rolesEdit').val() || []  // если null, то пустой массив
-            };
-            saveUserChanges(updatedUser);
+            updateUser();
+            return false;
         }
     });
+}
 
-    function saveUserChanges(updatedUser) {
-        $.ajax({
-            url: '/api/admin/edit',
-            type: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify(updatedUser),
-            headers: {
-                'X-CSRF-TOKEN': csrfToken
-            },
-            success: function (data) {
-                alert("User updated successfully");
-                $('#editModal').modal('hide');
-                loadUsers();
-            },
-            error: function (xhr) {
-                var validator = $("#editForm").validate();
-                if (xhr.status === 409 && xhr.responseJSON) {
-                    // Show server-side validation error
-                    validator.showErrors({
-                        emailEdit: xhr.responseJSON.email // emailEdit instead of email
-                    });
-                } else {
-                    alert("Error updating user");
+function updateUser() {
+    // Собираем данные из формы
+    const formData = {
+        id: $('#editForm input[name="id"]').val(),
+        firstName: $('#editForm input[name="firstName"]').val(),
+        lastName: $('#editForm input[name="lastName"]').val(),
+        age: $('#editForm input[name="age"]').val(),
+        email: $('#editForm input[name="email"]').val(),
+        password: $('#editForm input[name="password"]').val(),
+        roles: $('#editForm select[name="roles"]').val()
+    };
+
+    // Отправляем данные на сервер
+    $.ajax({
+        url: '/api/admin/edit',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(formData),
+        success: function (response) {
+            $('#editModal').modal('hide');
+            loadUsersTable();
+            alert('Пользователь успешно обновлен!');
+        },
+        error: function (xhr) {
+            if (xhr.status === 400) {
+                // Обработка ошибок валидации с сервера
+                const errors = xhr.responseJSON;
+                for (const field in errors) {
+                    $(`#editForm [name="${field}"]`).addClass('is-invalid');
+                    $(`#${field}-error`).text(errors[field]).show();
                 }
+            } else {
+                alert('Ошибка обновления пользователя: ' + xhr.statusText);
             }
-        });
-    }
-
-// Валидация формы нового пользователя
-    $(document).on('submit', '#newUserForm', function (e) {
-        e.preventDefault(); // Prevent the default form submission
-
-        $("#newUserForm").validate({
-            errorClass: "error",
-            errorElement: "label",
-            errorPlacement: function (error, element) {
-                error.insertAfter(element);
-            },
-            rules: {
-                firstName: "required",
-                lastName: "required",
-                age: {
-                    required: true,
-                    number: true,
-                    min: 1
-                },
-                email: {
-                    required: true,
-                    email: true
-                },
-                password: {
-                    minlength: 3
-                },
-                roles: "required"
-            },
-            messages: {
-                firstName: "Пожалуйста, введите имя",
-                lastName: "Пожалуйста, введите фамилию",
-                age: {
-                    required: "Пожалуйста, введите возраст",
-                    number: "Возраст должен быть числом",
-                    min: "Возраст должен быть положительным"
-                },
-                email: {
-                    required: "Пожалуйста, введите email",
-                    email: "Введите корректный email"
-                },
-                password: {
-                    minlength: "Пароль должен быть не менее 3 символов"
-                },
-                roles: "Пожалуйста, выберите хотя бы одну роль"
-            },
-            submitHandler: function (form) {
-                var newUser = {
-                    firstName: $('#firstName').val(),
-                    lastName: $('#lastName').val(),
-                    age: $('#age').val(),
-                    email: $('#email').val(),
-                    password: $('#password').val(),
-                    roles: $('#roles').val()
-                };
-                createUser(newUser);
-            }
-        });
-    });
-    // Загрузка пользователей и текущего пользователя
-    loadUsers();
-    loadCurrentUser();
-
-    // Обработчики событий для табов (вкладок)
-    $('.nav-link').on('click', function (e) {
-        e.preventDefault();
-        var target = $(this).data('target');
-        if (target === '#user-page-tab') {
-            loadCurrentUser();
         }
-        $(this).tab('show');
     });
-// Обработчик события для показа модального окна редактирования
-    $(document).on('show.bs.modal', '#editModal', function (event) {
-        $("#editForm").validate().resetForm();
-        var button = $(event.relatedTarget);
-        var userId = button.data('id');
-        loadUserForEdit(userId);
+}
+
+function showDeleteModal(userId) {
+    $.get(`/api/admin/edit/${userId}`, function (user) {
+        $('#idDelete').val(user.id);
+        $('#firstNameDelete').val(user.firstName);
+        $('#lastNameDelete').val(user.lastName);
+        $('#ageDelete').val(user.age);
+        $('#emailDelete').val(user.email);
+
+        // Заполняем роли
+        const rolesDelete = $('#rolesDelete');
+        rolesDelete.empty();
+        user.roles.forEach(role => {
+            rolesDelete.append(`<option selected>${role.name.substring(5)}</option>`);
+        });
+
+        // Показываем модальное окно
+        $('#deleteModal').modal('show');
+
+        // Обработчик кнопки удаления
+        $('#deleteButton').off('click').on('click', function () {
+            deleteUser(userId);
+        });
+    }).fail(function () {
+        alert('Error loading user data');
     });
+}
 
-// Обработчик события для показа модального окна удаления
-    $(document).on('show.bs.modal', '#deleteModal', function (event) {
-        var button = $(event.relatedTarget);
-        var userId = button.data('id');
-        loadUserForDelete(userId);
+function deleteUser(userId) {
+    if (!confirm('Вы уверены, что хотите удалить этого пользователя?')) {
+        return;
+    }
+
+    $.ajax({
+        url: `/api/admin/delete/${userId}`,
+        type: 'DELETE',
+        success: function () {
+            $('#deleteModal').modal('hide');
+
+            // Удаляем строку из таблицы без перезагрузки страницы
+            $(`#usersTable tr[data-id="${userId}"]`).remove();
+
+            // Можно добавить уведомление об успешном удалении
+            showAlert('Пользователь успешно удален', 'success');
+        },
+        error: function (xhr) {
+            $('#deleteModal').modal('hide');
+            showAlert('Ошибка при удалении пользователя: ' + xhr.statusText, 'danger');
+        }
     });
+}
 
-// Обработчик события для кнопки удаления
-    $(document).on('click', '#deleteButton', function () {
-        deleteUser();
+// Вспомогательная функция для показа уведомлений
+function showAlert(message, type) {
+    const alert = $(`<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+        ${message}
+        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+        </button>
+    </div>`);
+
+    $('#usersTable').before(alert);
+
+    // Автоматическое закрытие уведомления через 5 секунд
+    setTimeout(() => {
+        alert.alert('close');
+    }, 5000);
+}
+
+function loadUserData() {
+    $('#loadingIndicator').show();
+    $('#errorMessage').hide();
+
+    $.get("/api/user", function (user) {
+        const userData = $('#userData');
+        userData.empty();
+
+        const rolesText = Array.from(user.roles).join(', ');
+        const row = `
+            <tr>
+                <td>${user.id}</td>
+                <td>${user.firstName}</td>
+                <td>${user.lastName}</td>
+                <td>${user.age}</td>
+                <td>${user.email}</td>
+                <td>${rolesText}</td>
+            </tr>
+        `;
+        userData.append(row);
+        $('#loadingIndicator').hide();
+    }).fail(function () {
+        $('#loadingIndicator').hide();
+        $('#errorMessage').show();
     });
-
-    //Обработчик события для кнопки редактирования
-    $(document).on('click', '#editButton', function () {
-        saveUserChanges();
-    });
-
-// Функция для загрузки пользователей
-    function loadUsers() {
-        $.ajax({
-            url: '/api/admin',
-            type: 'GET',
-            dataType: 'json',
-            success: function (data) {
-                var users = data.allUsers;
-                var tableBody = $('#usersTable tbody');
-                tableBody.empty();
-
-                $.each(users, function (i, user) {
-                    var roles = user.roles ? user.roles.join(', ') : '';
-                    var row = '<tr>' +
-                        '<td>' + user.id + '</td>' +
-                        '<td>' + user.firstName + '</td>' +
-                        '<td>' + user.lastName + '</td>' +
-                        '<td>' + user.age + '</td>' +
-                        '<td>' + user.email + '</td>' +
-                        '<td>' + roles + '</td>' +
-                        '<td><button type="button" class="btn btn-info editBtn" data-toggle="modal" data-target="#editModal" data-id="' + user.id + '">Edit</button></td>' +
-                        '<td><button type="button" class="btn btn-danger deleteBtn" data-toggle="modal" data-target="#deleteModal" data-id="' + user.id + '">Delete</button></td>' +
-                        '</tr>';
-                    tableBody.append(row);
-                });
-            },
-            error: function (xhr, status, error) {
-            }
-        });
-    }
-
-    // Загрузка страницы пользоветеля
-    function loadUserPage() {
-        fetch('/api/user')
-            .then(response => response.json())
-            .then(data => {
-                const users = Array.isArray(data) ? data : [data];
-                $('#userTable').html(users.map(user => `
-                  <tr>
-                      <th>${user.id}</th>
-                      <th>${user.firstName}</th>
-                      <th>${user.lastName}</th>
-                      <th>${user.age}</th>
-                      <th>${user.email}</th>
-                      <th>${user.roles.join(', ')}</th>
-                  </tr>
-              `).join(''));
-            })
-            .catch(console.error);
-    }
-
-
-// Функция для загрузки текущего пользователя
-    function loadCurrentUser() {
-        $.ajax({
-            url: '/api/admin',
-            type: 'GET',
-            dataType: 'json',
-            success: function (data) {
-                var currentUser = data.currentUser;
-                $('#headerEmail').text(currentUser.email);
-                $('#headerRoles').text('Roles: ' + currentUser.roles.join(', '));
-
-                $('#userId').text(currentUser.id);
-                $('#userFirstName').text(currentUser.firstName);
-                $('#userLastName').text(currentUser.lastName);
-                $('#userAge').text(currentUser.age);
-                $('#userEmail').text(currentUser.email);
-                $('#userRoles').text(currentUser.roles.join(', '));
-            },
-            error: function (xhr, status, error) {
-            }
-        });
-    }
-
-// Функция для создания нового пользователя
-    function createUser(newUser) {
-        $.ajax({
-            url: '/api/admin/new_user',
-            type: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify(newUser),
-            success: function (data) {
-                alert("Пользователь создан: " + data.firstName);
-                $('#newUserForm')[0].reset();
-                loadUsers();
-                $('#user-table-tab').tab('show');
-            },
-            error: function (xhr) {
-                let message = "Ошибка создания пользователя";
-                if (xhr.responseJSON && xhr.responseJSON.error) {
-                    message = xhr.responseJSON.error;
-                }
-                alert(message);
-            },
-            complete: function() {
-                $('#addUserButton').prop('disabled', false).text('Add new user');
-            }
-        });
-    }
-
-// Функция для загрузки данных пользователя в форму редактирования
-    function loadUserForEdit(userId) {
-        $.ajax({
-            url: '/api/admin',
-            type: 'GET',
-            dataType: 'json',
-            success: function (data) {
-                var users = data.allUsers;
-                var user = users.find(u => u.id == userId);
-                if (user) {
-                    $('#idEdit').val(user.id);
-                    $('#firstNameEdit').val(user.firstName);
-                    $('#lastNameEdit').val(user.lastName);
-                    $('#ageEdit').val(user.age);
-                    $('#emailEdit').val(user.email);
-
-                    var rolesSelect = $('#rolesEdit');
-                    rolesSelect.val(user.roles);
-                }
-            },
-            error: function (xhr, status, error) {
-            }
-        });
-    }
-
-
-// Функция для загрузки данных пользователя в форму удаления
-    function loadUserForDelete(userId) {
-        $.ajax({
-            url: '/api/admin',
-            type: 'GET',
-            dataType: 'json',
-            success: function (data) {
-                var users = data.allUsers;
-                var user = users.find(u => u.id === userId);
-                if (user) {
-                    $('#idDelete').val(user.id);
-                    $('#firstNameDelete').val(user.firstName);
-                    $('#lastNameDelete').val(user.lastName);
-                    $('#ageDelete').val(user.age);
-                    $('#emailDelete').val(user.email);
-                    $('#rolesDelete').val(user.roles);
-                }
-            },
-            error: function (xhr, status, error) {
-            }
-        });
-    }
-
-// Функция для удаления пользователя
-    function deleteUser(userId) {
-        if (!confirm('Удалить пользователя?')) return;
-
-        console.log('Удаление пользователя:', userId); // Логируем ID
-
-        $.ajax({
-            url: `/api/admin/delete/${userId}`,
-            type: 'DELETE',
-            headers: {
-                'X-CSRF-TOKEN': csrfToken // Убедитесь, что csrfToken определён
-            },
-            success: function() {
-                console.log('Успешно удалено');
-                loadUsers(); // Перезагружаем список
-            },
-            error: function(xhr) {
-                console.error('Ошибка удаления:', xhr.responseText);
-                alert('Не удалось удалить пользователя');
-            }
-        });
-    }
-});
+}

@@ -4,25 +4,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
-import ru.kata.spring.boot_security.demo.models.Role;
 import ru.kata.spring.boot_security.demo.models.User;
 import ru.kata.spring.boot_security.demo.services.RoleService;
 import ru.kata.spring.boot_security.demo.services.UserService;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.validation.Valid;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 
 @Controller
@@ -40,7 +31,7 @@ public class ViewController {
     }
 
     @GetMapping()
-    public String redirectToIndexOrLogin(Authentication authentication) {
+    public String indexView(Authentication authentication) {
         return "index";
     }
 

@@ -7,6 +7,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import ru.kata.spring.boot_security.demo.dto.UserDTO;
 import ru.kata.spring.boot_security.demo.models.Role;
 import ru.kata.spring.boot_security.demo.models.User;
@@ -31,14 +32,37 @@ public class MainRestController {
         this.passwordEncoder = passwordEncoder;
     }
 
-    // GET /admin — возвращаем список пользователей и текущего пользователя в JSON
+    @GetMapping
+    public ResponseEntity<Map<String, Object>> currentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        User currentUser = (User) auth.getPrincipal();
+
+        // Конвертируем роли в строки (без префикса ROLE_)
+        UserDTO currentUserDto = new UserDTO(
+                currentUser.getId(),
+                currentUser.getFirstName(),
+                currentUser.getLastName(),
+                currentUser.getAge(),
+                currentUser.getEmail(),
+                currentUser.getPassword(),
+                currentUser.getRoles().stream()
+                        .map(role -> role.getName().replace("ROLE_", ""))
+                        .collect(Collectors.toSet())
+        );
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("currentUser", currentUserDto);
+        return ResponseEntity.ok(response);
+    }
+
+    // GET /admin — возвращаем список пользователей
     @GetMapping("/admin")
     public ResponseEntity<Map<String, Object>> userList() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || authentication.getPrincipal().equals("anonymousUser")) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        User currentUser = (User) authentication.getPrincipal();
 
         List<User> allUsers = userService.allUsers();
 
@@ -46,10 +70,8 @@ public class MainRestController {
                 .map(this::convertToDto)
                 .collect(Collectors.toList());
 
-        UserDTO currentUserDto = convertToDto(currentUser);
 
         Map<String, Object> response = new HashMap<>();
-        response.put("currentUser", currentUserDto);
         response.put("allUsers", usersDto);
         response.put("roles", roleService.getAllRoles().stream()
                 .map(role -> role.getName().substring(5))
@@ -105,6 +127,16 @@ public class MainRestController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Collections.singletonMap("error", "Ошибка при создании пользователя"));
         }
+    }
+
+    @GetMapping("/admin/edit/{id}")
+    @ResponseBody
+    public User editUser(@PathVariable Long id) {
+        User updUser = userService.findUserById(id);
+        if (updUser == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Пользователь не найден");
+        }
+        return updUser;
     }
 
     @PostMapping("/admin/edit")

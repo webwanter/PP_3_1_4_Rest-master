@@ -14,9 +14,17 @@ select.form-control[multiple], select.form-control[size] {
     height: 4rem;
 }
 
+.tab-content > .tab-pane {
+    display: none;
+}
+
+.tab-content > .active {
+    display: block;
+}
+
 .row {
-     margin: 0;
- }
+    margin: 0;
+}
 
 .container-fluid {
     padding: 0;

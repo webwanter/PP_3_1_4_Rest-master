@@ -1,16 +1,42 @@
 package ru.kata.spring.boot_security.demo.dto;
 
+import javax.validation.constraints.*;
 import java.util.Set;
 
 public class UserDTO {
-    private Long id;
-    private String firstName;
-    private String lastName;
-    private Integer age;
-    private String email;
-    private String password;
 
+    @NotNull(message = "ID обязателен")
+    private Long id;
+
+    @NotBlank(message = "Имя обязательно")
+    private String firstName;
+
+    @NotBlank(message = "Фамилия обязательна")
+    private String lastName;
+
+    @Min(value = 1, message = "Возраст должен быть положительным")
+    private int age;
+
+    @Email(message = "Некорректный email")
+    private String email;
+
+    private String password; // Может быть null
+
+    @NotEmpty(message = "Роли обязательны")
     private Set<String> roles;
+
+    public UserDTO() {
+    }
+
+    public UserDTO(Long id, String firstName, String lastName, int age, String email, String password, Set<String> roles) {
+        this.id = id;
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.age = age;
+        this.email = email;
+        this.password = password;
+        this.roles = roles;
+    }
 
     public Long getId() {
         return id;

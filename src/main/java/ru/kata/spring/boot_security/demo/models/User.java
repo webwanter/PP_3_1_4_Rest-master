@@ -7,9 +7,7 @@ import javax.persistence.*;
 import javax.validation.constraints.*;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "users")
@@ -105,7 +103,9 @@ public class User implements UserDetails {
         return id;
     }
 
-    public void setId(Long id) { this.id = id; }
+    public void setId(Long id) {
+        this.id = id;
+    }
 
     public String getFirstName() {
         return firstName;
